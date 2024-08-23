@@ -1,0 +1,16 @@
+CALL_METHOD
+    Address("account_tdx_2_128q9086uj7hjgpdlfef8pfttpcjfp48dq4x2xfds4vkw948qsckwpc")
+    "create_proof_of_amount"    
+    Address("resource_tdx_2_1t4nt68uuhm4xezgdjcp0sx283207d03mpml78sszsaxyjqnf3t2lep")
+    Decimal("1");
+CALL_METHOD
+    Address("component_tdx_2_1cpkdxhvreprd6kwvztjmn2y0wj6qctnlpefeaz9vu9cp3ahr4l9xcs")
+    "mint_customer_badge"
+    "customer1"
+;
+CALL_METHOD
+    Address("account_tdx_2_128neaaauwg33as80yuyw3nzzuqn9h7z24pmh4z2j4w5zg55r3d5dvf)
+    "try_deposit_batch_or_refund"
+    Expression("ENTIRE_WORKTOP")
+    Enum<0u8>()
+;

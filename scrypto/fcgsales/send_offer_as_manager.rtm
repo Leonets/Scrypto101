@@ -1,0 +1,26 @@
+CALL_METHOD
+    Address("${component_test}")
+    "lock_fee"
+    Decimal("5000")
+;
+CALL_METHOD
+    Address("${manager_account}")
+    "create_proof_of_non_fungibles"
+    Address("${manager}")
+    Array<NonFungibleLocalId>(NonFungibleLocalId("${manager_badge_id}"));
+CALL_METHOD
+    Address("${component}")
+    "send_offer"
+    "${hash_pdf}"
+    Decimal("${expiry_date}")
+    Decimal("${offer_amount}")
+    Address("${customer_account}")
+;
+CALL_METHOD
+    Address("${customer_account}")
+    "try_deposit_batch_or_refund"
+    Expression("ENTIRE_WORKTOP")
+    Enum<0u8>()
+;
+
+
