@@ -32,64 +32,28 @@
 //! This is the list of all the functions needed to setup, configure and manage the dApp functionalities
 //! 
 //! 
-//! ## Mint Offer Manager
-//!
-//! [mint_manager_badge()][fcgsales::Fcgsales::mint_manager_badge]
-//! Function for minting a new badge for then allowing a Manager to create offer for customer
-//! 
-//! ## Mint Customer Badge
-//!
-//! [mint_customer_badge()][fcgsales::Fcgsales::mint_customer_badge]
-//! Function for minting a new badge for then allowing a Customer to accept/refuse offer
-//! 
 
 use scrypto::prelude::*;
-use scrypto_avltree::AvlTree;
 
 /// this is to contain data about an offer
 #[derive(ScryptoSbor, NonFungibleData)]
-pub struct OfferData {
-    pub hash_pdf: String,
-    #[mutable]
-    pub expiry_date: Decimal,
-    #[mutable]
-    pub state: String,    
-    pub create_timestamp: Decimal,
-    #[mutable]
-    pub accepted_timestamp: Decimal,
-    #[mutable]
-    pub refused_timestamp: Decimal,
-    pub offer_amount: Decimal                
-}
-
-/// this is to contain the username of a Manager Member
-#[derive(NonFungibleData, ScryptoSbor)]
-struct ManagerBadge {
-    username: String
-}
-
-/// this is to contain the username of a Customer Member
-#[derive(NonFungibleData, ScryptoSbor)]
-struct CustomerBadge {
-    username: String
+pub struct EscrowData {
+    pub requested_resource: ResourceAddress,
+    pub requested_amount: Decimal,
+    pub offered_resource: ResourceAddress              
 }
 
 
-#[derive(ScryptoSbor, ScryptoEvent)]
-struct AcceptedOfferEvent {
-    offer: OfferData,
-    epoch: Decimal,
+#[derive(ScryptoSbor, NonFungibleData)]
+pub struct EscrowBadge {
+    offered_resource: ResourceAddress
 }
 
-#[derive(ScryptoSbor, ScryptoEvent)]
-struct RefusedOfferEvent {
-    offer: OfferData,
-    epoch: Decimal,
-}
+
 
 #[blueprint]
-#[events(AcceptedOfferEvent, RefusedOfferEvent)]
 mod fcgsales {
+
     enable_method_auth! {
         roles {
             admin => updatable_by: [OWNER];
@@ -97,244 +61,106 @@ mod fcgsales {
             customer => updatable_by: [manager, admin, OWNER];
         },
         methods {
-            send_offer => restrict_to: [manager, admin, OWNER];
-            cancel_offer => restrict_to: [manager, admin, OWNER];
-            accept_offer => restrict_to: [customer];
-            refuse_offer => restrict_to: [customer];
-            mint_manager_badge => restrict_to: [admin, OWNER];
-            mint_customer_badge => restrict_to: [manager, admin, OWNER];
+            exchange => PUBLIC;
+            withdraw_resource => PUBLIC;
+            cancel_escrow => PUBLIC;
         }
     }
 
     /// Data managed by the blueprint
-    // nft_manager: ResourceManager,                            -> Resource Manager for minting/updating OfferData NFT
-    // manager: AvlTree<u16, NonFungibleLocalId>,               -> List of manager members NonFungibleLocalId
-    // customer: AvlTree<u16, NonFungibleLocalId>,              -> List of customer members NonFungibleLocalId
-    // manager_badge_resource_manager: ResourceManager,         -> Resource manager for minting/burning/recalling manager badges
-    // customer_badge_resource_manager: ResourceManager,        -> Resource manager for minting/burning/recalling a customer badges
+    // nft_manager: ResourceManager,                            -> Resource Manager for minting/updating EscrowData NFT
     struct Fcgsales<> {
+        escrow_vault: NonFungibleVault,
+        completed_sale: Vault,
+        requested_resource: ResourceAddress,
+        requested_amount: Decimal,
         nft_manager: ResourceManager,
-        manager: AvlTree<u16, NonFungibleLocalId>,
-        customer: AvlTree<u16, NonFungibleLocalId>,
-        manager_badge_resource_manager: ResourceManager,
-        customer_badge_resource_manager: ResourceManager,
     }
 
     impl Fcgsales {
 
-        /// Creates a new ready-to-use Fcgsales, returning also an owner and an admin badge
+        /// Creates a new ready-to-use Fcgsales for an Escrow
         /// 
         /// This create also:
-        ///   - resource managers to manage customer and manager badges
-        ///   - a NFT manager to mint/recall OfferData 
-        ///   - two separate containers to store customer and manager list of NonFungibleLocalId (not needed)
+        ///   - a NFT manager to exchange or cancel the NFT representing the Escrow 
         /// 
         /// Returns a tuple containing:
         /// - The component address of the instantiated and globalized Fcgsales
-        /// - An Owner badge 
-        /// - An Admin badge 
+        /// - The NonFungibleBucket containing an NFT representing the Escrow
         /// 
-        pub fn instantiate() -> (Global<Fcgsales>, FungibleBucket, FungibleBucket) {
+        pub fn instantiate(
+                    requested_resource: ResourceAddress,
+                    requested_amount: Decimal,
+                    offered_resource: NonFungibleBucket
+                ) 
+            -> (Global<Fcgsales>, NonFungibleBucket) {
 
-            //container
-            let manager: AvlTree<u16, NonFungibleLocalId> = AvlTree::new();
-            let customer: AvlTree<u16, NonFungibleLocalId> = AvlTree::new();
 
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(Fcgsales::blueprint_id());
 
-            //owner badge
-            let owner_badge = 
-                ResourceBuilder::new_fungible(OwnerRole::None)
-                    .metadata(metadata!(init{
-                        "name"=>"FCG Sales Owner badge", locked;
-                        "symbol" => "FCG Sales Owner", locked;
-                        "description" => "A badge to be used for some extra-special administrative function", locked;
-                    }))
-                    .divisibility(DIVISIBILITY_NONE)
-                    .mint_initial_supply(1);
-
-            //admin badge
-            let admin_badge = 
-                ResourceBuilder::new_fungible(OwnerRole::Updatable(rule!(require(
-                    owner_badge.resource_address()
-                ))))
-                    .metadata(metadata!(init{
-                        "name"=>"FCG Sales Admin badge", locked;
-                        "symbol" => "FCG Sales Admin", locked;
-                        "description" => "A badge to be used for some special administrative function", locked;
-                    }))
-                    .divisibility(DIVISIBILITY_NONE)
-                    .mint_initial_supply(1);
-
-
-            // Create a resourceManager to manage Manager Badges
-            // A manager badge can be created by the component, by the component owner badge or by an admin 
-            let manager_resource_manager: ResourceManager = 
-                ResourceBuilder::new_integer_non_fungible::<ManagerBadge>(OwnerRole::Updatable(rule!(
-                    require(owner_badge.resource_address())
-                        || require(admin_badge.resource_address())
-                )))
-                .metadata(metadata!(init{
-                    "name" => "Fcgsales Manager Badge", locked;
-                    "symbol" => "Fcgsales Manager", locked;
-                    "description" => "A badge to be used for some manager function", locked;
-                }))
-                .mint_roles(mint_roles! (
-                        minter => rule!(
-                                require(global_caller(component_address))
-                                || require(owner_badge.resource_address())
-                                || require(admin_badge.resource_address())
-                        );
-                        minter_updater => OWNER;
-                ))
-                .burn_roles(burn_roles! (
-                    burner => rule!(
-                            require(global_caller(component_address))
-                            || require(owner_badge.resource_address())
-                            || require(admin_badge.resource_address())
-                    );
-                    burner_updater => OWNER;
-                ))
-                .recall_roles(recall_roles! {
-                    recaller => rule!(
-                            require(global_caller(component_address))
-                            || require(owner_badge.resource_address())
-                            || require(admin_badge.resource_address())
-                    );
-                    recaller_updater => OWNER;
-                })
-            .create_with_no_initial_supply();           
-
-
-            // Create a resourceManager to manage Customer Badges
-            // A Customer badge can be created by the component, by an admin or by a manager 
-            let customer_resource_manager: ResourceManager = 
-                ResourceBuilder::new_integer_non_fungible::<CustomerBadge>(OwnerRole::Updatable(rule!(
-                    require(owner_badge.resource_address())
-                        || require(admin_badge.resource_address())
-                        || require(manager_resource_manager.address())
-                )))
-                .metadata(metadata!(init{
-                    "name" => "Fcgsales Customer Badge", locked;
-                    "symbol" => "Fcgsales Customer", locked;
-                    "description" => "A badge to be used for some customer function", locked;
-                }))
-                .mint_roles(mint_roles! (
-                    minter => rule!(
-                                require(global_caller(component_address))
-                                || require(admin_badge.resource_address())
-                                || require(manager_resource_manager.address()));
-                    minter_updater => OWNER;
-                ))
-                .burn_roles(burn_roles! (
-                    burner => rule!(
-                        require(global_caller(component_address))
-                        || require(admin_badge.resource_address())
-                        || require(manager_resource_manager.address()));
-                    burner_updater => OWNER;
-                ))
-                .recall_roles(recall_roles! {
-                    recaller => rule!(
-                        require(global_caller(component_address))
-                        || require(admin_badge.resource_address())
-                        || require(manager_resource_manager.address()));
-                    recaller_updater => OWNER;
-                })
-            .create_with_no_initial_supply();             
+            // let global_caller_badge_rule = rule!(require(global_caller(component_address))); 
                 
-
-            // Create a resourceManager to manage OfferData NFT
-            // This NFT is also burnable in the scope of this specific blueprint customized for this challenge
-            // Mint is available only from the component
+            // Create a resourceManager to manage EscrowData NFT
             let nft_manager =
-                ResourceBuilder::new_ruid_non_fungible::<OfferData>(OwnerRole::Updatable(rule!(
-                    require(owner_badge.resource_address())
-                        || require(admin_badge.resource_address())
-                )))
+                ResourceBuilder::new_ruid_non_fungible::<EscrowData>(OwnerRole::None)
                 .metadata(metadata!(
                     init {
-                        "name" => "FCG Sales OfferData NFT", locked;
-                        "symbol" => "FCG Sales OfferData", locked;
+                        "name" => "FCG Sales EscrowData NFT", locked;
+                        "symbol" => "FCG Sales EscrowData", locked;
                         "description" => "An NFT containing information about an Offer", locked;
                     }
                 ))
                 .mint_roles(mint_roles!(
-                    minter => rule!(require(global_caller(component_address)));
+                    minter => rule!(allow_all);
                     minter_updater => rule!(require(global_caller(component_address)));
-                ))
-                .recall_roles(recall_roles!(
-                    recaller => rule!(
-                        require(global_caller(component_address))
-                        || require(admin_badge.resource_address())
-                        || require(manager_resource_manager.address()));
-                    recaller_updater => OWNER;
-                ))                
+                ))              
                 .burn_roles(burn_roles!(
                     burner => rule!(require(global_caller(component_address)));
                     burner_updater => OWNER;
-                ))
-                .non_fungible_data_update_roles(non_fungible_data_update_roles!(
-                    non_fungible_data_updater => rule!(require(global_caller(component_address)));
-                    non_fungible_data_updater_updater => OWNER;
-                ))           
+                ))    
                 .create_with_no_initial_supply();
-      
 
-            // Populate a Fcgsales struct and instantiate a new component
-            // 
+            //mint an NFT
+            // let escrow_nft = EscrowData {
+            //     requested_resource: requested_resource,
+            //     requested_amount: requested_amount,
+            //     offered_resource: offered_resource.resource_address()
+            // };
+
+            info!("Minting an Escrow NFT");
+            // let nft: NonFungibleBucket = scrypto::prelude::NonFungibleBucket(nft_manager
+            //     .mint_ruid_non_fungible(escrow_nft));
+            // let nft: Bucket = nft_manager
+            //     .mint_ruid_non_fungible(escrow_nft);         
+
+            let nft = 
+                nft_manager
+                .mint_ruid_non_fungible(
+                    EscrowData {
+                        requested_resource: requested_resource,
+                        requested_amount: requested_amount,
+                        offered_resource: offered_resource.resource_address()
+                    }
+                ).as_non_fungible();               
+      
+            // Instantiate a new component by storing the offered resource in a Vault
             let component = 
                 Self {
-                    nft_manager: nft_manager,
-                    manager: manager,
-                    customer: customer,
-                    manager_badge_resource_manager: manager_resource_manager,
-                    customer_badge_resource_manager: customer_resource_manager,
+                    escrow_vault: NonFungibleVault::with_bucket(offered_resource),
+                    completed_sale: Vault::new(requested_resource),
+                    requested_resource: requested_resource,
+                    requested_amount: requested_amount,
+                    nft_manager: nft_manager
                 }
                 .instantiate()
                 .prepare_to_globalize(OwnerRole::Updatable(rule!(require(
-                    owner_badge.resource_address()
-                ))))
-                .enable_component_royalties(component_royalties! {
-                    // The roles section is optional, if missing, all roles default to OWNER
-                    roles {
-                        royalty_setter => rule!(allow_all);
-                        royalty_setter_updater => OWNER;
-                        royalty_locker => OWNER;
-                        royalty_locker_updater => rule!(deny_all);
-                        royalty_claimer => OWNER;
-                        royalty_claimer_updater => rule!(deny_all);
-                    },
-                    // Herein we are specifyng which functions generate a commission for the accounts
-                    init {
-                        send_offer => Free, locked;
-                        cancel_offer => Free, locked;
-
-                        accept_offer => Free, locked;
-                        refuse_offer => Free, locked;
-
-                        mint_manager_badge => Free, locked;
-                        mint_customer_badge => Free, locked;
-                    }
-                })                
-                .metadata(metadata!(
-                    init {
-                        "name" => "Fcgsales", locked;
-                        "icon_url" => Url::of("https://fcgsales.eu/images/logo.jpg"), locked;
-                        "description" => "FCG Sales SmartContract for digitalizing an offer service", locked;
-                        "claimed_websites" =>  ["https://fcgsales.eu"], locked;
-                    }
-                ))
-                //Herein we are specifying what does a role need to present a proof of itself
-                .roles(roles!(
-                    admin => rule!(require(admin_badge.resource_address()));
-                    manager => rule!(require(manager_resource_manager.address()));
-                    customer => rule!(require(customer_resource_manager.address()));
-                ))
+                    global_caller(component_address)
+                ))))              
                 .with_address(address_reservation)
                 .globalize();
  
-            return (component, admin_badge, owner_badge);
+            return (component, nft);
         }
 
         /// This creates and send a new offer to a customer
@@ -347,7 +173,7 @@ mod fcgsales {
         /// - `customer_account`: Account where this NFT will be sent (not needed)
         ///
         /// Returns 'Bucket':
-        /// - the OfferData NFT
+        /// - the EscrowData NFT
         ///
         /// ---
         ///
@@ -356,59 +182,56 @@ mod fcgsales {
         /// **Transaction manifest:**
         /// `fcgsales/send_offer_as_manager.rtm`
         /// ```text
-        #[doc = include_str!("../fcgsales/send_offer_as_manager.rtm")]
-        /// ```        
-        pub fn send_offer(&mut self, hash_pdf: String, expiry_date: Decimal, offer_amount: Decimal, _customer_account: Global<Account>) -> Bucket {
-            info!("Ready for minting an offer ");
-            //mint an NFT
-            let epoch = Decimal::from(Runtime::current_epoch().number());
-            let offer = OfferData {
-                hash_pdf: hash_pdf.clone(),
-                expiry_date: expiry_date,
-                state: "NEW".to_string(),    
-                create_timestamp: epoch,
-                accepted_timestamp: dec!(0),
-                refused_timestamp: dec!(0),
-                offer_amount: offer_amount   
-            };
+        #[doc = include_str!("../escrow/exchange.rtm")]
+        /// ```      
+        pub fn exchange(&mut self, mut bucket_of_resource: Bucket) -> (NonFungibleBucket, Bucket) {
+            info!("Exchange running  "); 
 
-            info!("Minting an offer ");
+            //resource address needs to be checked
+            let requested_resource = bucket_of_resource.resource_address();
+            info!("Resource received: {:?} ", requested_resource); 
             
-            let nft = self
-            .nft_manager
-                .mint_ruid_non_fungible(offer);
+            assert!(self.requested_resource == requested_resource,
+                "Resource Requested is different from what you provide!"
+            );
 
-            info!("Sending an offer for this pdf {:?} with this expiry date {:?} to this account {:?}  ",hash_pdf, expiry_date, _customer_account);
+            let requested_amount = bucket_of_resource.amount();
+            //resource amount need to be enough
+            assert!(
+                bucket_of_resource.amount() >= self.requested_amount,
+                "Amount of resources provided is not enough for a successfull exchange!"
+            );
+            //take the requested amount
+            self.completed_sale.put(bucket_of_resource.take(requested_amount));
 
-            nft
+            //return the offered resource
+            return (self.escrow_vault.take(1),bucket_of_resource);
         }
 
-        /// This removes the offer NFT from the customer account
-        /// 
-        /// 
-        /// Arguments:
-        /// - `offer_id`: NonFungibleLocalId of the NFT to be recalled
-        ///
-        /// Returns 'None':
-        ///
-        /// ---
-        ///
-        /// **Access control:** Can be called by an Admin or by a Manager.
-        ///
-        /// **Transaction manifest:**
-        /// `fcgsales/recall_offer.rtm`
-        /// ```text
-        #[doc = include_str!("../fcgsales/recall_offer.rtm")]
-        /// ```    
-        pub fn cancel_offer(&mut self, _offer_id: NonFungibleLocalId)  {
+        pub fn withdraw_resource(&mut self, escrow_nft: NonFungibleBucket) -> (Bucket,Option<NonFungibleBucket>) {
 
-            todo!();
+            let escrow_data: EscrowData = escrow_nft.non_fungible().data();
+
+            info!("Withdraw Amount: {:?} of: {:?} ", escrow_data.requested_amount, escrow_data.requested_resource);   
+
+            match self.completed_sale.is_empty() {
+                false => {
+                    //burn the nft
+                    escrow_nft.burn();
+                    //return the collected tokens
+                    return (self.completed_sale.take_all(), None);
+                }
+                true => {
+                    info!("Escrow has not been completed ! ");
+                    return (Bucket::new(escrow_data.requested_resource), Some(escrow_nft));
+                }
+            }
         }
 
         /// This is for accepting an offer
         /// 
         /// Arguments:
-        /// - `offer_data_proof`: the OfferData NFT Proof 
+        /// - `offer_data_proof`: the EscrowData NFT Proof 
         ///
         /// Returns 'None':
         ///
@@ -419,113 +242,51 @@ mod fcgsales {
         /// **Transaction manifest:**
         /// `fcgsales/accept_offer.rtm`
         /// ```text
-        #[doc = include_str!("../fcgsales/accept_offer.rtm")]
-        /// ```        
-        pub fn accept_offer(&mut self, offer_data_proof: NonFungibleProof)  {
-            let current_epoch = Decimal::from(Runtime::current_epoch().number());
+        #[doc = include_str!("../escrow/cancel_escrow.rtm")]
+        /// ``` 
+        pub fn cancel_escrow(&mut self, escrow_nft: NonFungibleBucket) -> Option<NonFungibleBucket> {
+
+            let _escrow_data: EscrowData = escrow_nft.non_fungible().data();
+
+            info!("Cancel Escrow: {:?} of: {:?} ", _escrow_data.requested_amount, _escrow_data.requested_resource);   
+
+            match self.completed_sale.is_empty() {
+                false => {
+                    assert!(true == false, "Escrow is completed and it is not cancelable anymore!");
+                    None
+                }
+                true => {
+                    info!("Escrow has not been completed and you cancel ! ");
+                    escrow_nft.burn();
+                    Some(self.escrow_vault.take_all())
+                }
+            }
+
+        }
+
+        pub fn assert_resource(res_addr: ResourceAddress, expect_res_addr: ResourceAddress){
+            assert!(res_addr == expect_res_addr, "Incorrect resource passed in for interacting with the component!");
+        }
+
+
+        // pub fn accept_offer(&mut self, offer_data_proof: NonFungibleProof)  {
+        //     let current_epoch = Decimal::from(Runtime::current_epoch().number());
             
-            // Update the state of the Offer
-            let offer_data_proof = offer_data_proof.skip_checking();
-            let nft_local_id: NonFungibleLocalId = offer_data_proof.as_non_fungible().non_fungible_local_id();
-            let mut nfdata: OfferData = ResourceManager::from(offer_data_proof.resource_address()).get_non_fungible_data(&nft_local_id);
+        //     // Update the state of the Offer
+        //     let offer_data_proof = offer_data_proof.skip_checking();
+        //     let nft_local_id: NonFungibleLocalId = offer_data_proof.as_non_fungible().non_fungible_local_id();
+        //     let mut nfdata: EscrowData = ResourceManager::from(offer_data_proof.resource_address()).get_non_fungible_data(&nft_local_id);
 
-            info!("Accepting an offer for this pdf {:?} with this expiry date {:?} at epoch  {:?} ",nfdata.hash_pdf, nfdata.expiry_date, current_epoch);
+        //     info!("Accepting an offer for this pdf {:?} with this expiry date {:?} at epoch  {:?} ",nfdata.hash_pdf, nfdata.expiry_date, current_epoch);
 
-            assert!(nfdata.state == "NEW", "Offer is not acceptable anymore!");
-            assert!(nfdata.expiry_date >= current_epoch, "Offer is expired!");
-            self.nft_manager.update_non_fungible_data(&nft_local_id, "state", "ACCEPTED");   
-            self.nft_manager.update_non_fungible_data(&nft_local_id, "accepted_timestamp", current_epoch);   
+        //     assert!(nfdata.state == "NEW", "Offer is not acceptable anymore!");
+        //     assert!(nfdata.expiry_date >= current_epoch, "Offer is expired!");
+        //     self.nft_manager.update_non_fungible_data(&nft_local_id, "state", "ACCEPTED");   
+        //     self.nft_manager.update_non_fungible_data(&nft_local_id, "accepted_timestamp", current_epoch);   
 
-            //emit the event
-            nfdata.state = "ACCEPTED".to_string();
-            Runtime::emit_event(AcceptedOfferEvent { offer: nfdata, epoch: current_epoch});
-        }
+        //     //emit the event
+        //     nfdata.state = "ACCEPTED".to_string();
+        // }
 
-        /// This is for refusing an offer
-        /// 
-        /// Arguments:
-        /// - `offer_data_proof`: the OfferData NFT Proof 
-        ///
-        /// Returns 'None':
-        ///
-        /// ---
-        ///
-        /// **Access control:** Can be called by a Customer Only.
-        ///
-        /// **Transaction manifest:**
-        /// `fcgsales/refuse_offer.rtm`
-        /// ```text
-        #[doc = include_str!("../fcgsales/refuse_offer.rtm")]
-        /// ```      
-        pub fn refuse_offer(&mut self, offer_data_proof: NonFungibleProof) {
-            let current_epoch = Decimal::from(Runtime::current_epoch().number());
-
-            // Update the state of the Offer
-            let offer_data_proof = offer_data_proof.skip_checking();
-            let nft_local_id: NonFungibleLocalId = offer_data_proof.as_non_fungible().non_fungible_local_id();
-            let mut nfdata: OfferData = ResourceManager::from(offer_data_proof.resource_address()).get_non_fungible_data(&nft_local_id);
-            
-            info!("Refuse an offer for this pdf {:?} with this expiry date {:?} at epoch  {:?} ",nfdata.hash_pdf, nfdata.expiry_date, current_epoch);
-
-            assert!(nfdata.state == "NEW", "Offer is not refusable anymore!");
-            assert!(nfdata.expiry_date >= current_epoch, "Offer is expired!");
-            self.nft_manager.update_non_fungible_data(&nft_local_id, "state", "REFUSED");   
-            self.nft_manager.update_non_fungible_data(&nft_local_id, "refused_timestamp", current_epoch);   
-
-            //emit the event
-            nfdata.state = "REFUSED".to_string();
-            Runtime::emit_event(RefusedOfferEvent { offer: nfdata, epoch: current_epoch});
-        }
-
-        /// Utility function: Mint a manager badge
-        /// 
-        /// Arguments:
-        /// - `username`: Username that will be registered in the NFT
-        /// ---
-        ///
-        /// **Access control:** Can be called by the Owner or the Admin only.
-        ///                    
-        pub fn mint_manager_badge(&mut self, username: String) -> Bucket {
-            let manager_badge_bucket: Bucket = self
-                .manager_badge_resource_manager
-                .mint_non_fungible(
-                    &NonFungibleLocalId::integer((self.manager.get_length()+1).try_into().unwrap()),
-                    ManagerBadge {
-                        username: username.clone(),
-                    });
-
-            let id = manager_badge_bucket.as_non_fungible().non_fungible_local_id();
-            let key = self.manager.get_length().to_u16().unwrap()+1; 
-            info!("Saving staff badge with key : {:?} and id {:?} for the username: {:?}  ",key, id, username);
-            self.manager.insert(key, id);
-
-            manager_badge_bucket
-        }
-
-        /// Utility function: Mint a customer badge
-        /// 
-        /// Arguments:
-        /// - `username`: Username that will be registered in the NFT
-        /// ---
-        ///
-        /// **Access control:** Can be called by the Admin or the Customer only.
-        ///                    
-        pub fn mint_customer_badge(&mut self, username: String) -> Bucket {
-            let customer_badge_bucket: Bucket = self
-                .customer_badge_resource_manager
-                .mint_non_fungible(
-                    &NonFungibleLocalId::integer((self.customer.get_length()+1).try_into().unwrap()),
-                    CustomerBadge {
-                        username: username.clone(),
-                    });
-
-            let id = customer_badge_bucket.as_non_fungible().non_fungible_local_id();
-            let key = self.customer.get_length().to_u16().unwrap()+1; 
-            info!("Saving staff badge with key : {:?} and id {:?} for the username: {:?}  ",key, id, username);
-            self.customer.insert(key, id);
-
-            customer_badge_bucket
-        }
-    
     }
 }
