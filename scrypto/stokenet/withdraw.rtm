@@ -1,0 +1,20 @@
+CALL_METHOD
+    Address("account_tdx_2_128q9086uj7hjgpdlfef8pfttpcjfp48dq4x2xfds4vkw948qsckwpc")
+    "withdraw_non_fungibles"
+    Address("resource_tdx_2_1ngy3ryxcpvtf3ex0zn84eknlp26cppxk255q363x70rv69k5kfgnpc")
+    Array<NonFungibleLocalId>(NonFungibleLocalId("{1f0970228c6c33ca-e8b361a216e6dfff-3ff52a762360fddc-20aacd29cc612f69}"));
+TAKE_ALL_FROM_WORKTOP
+    Address("resource_tdx_2_1ngy3ryxcpvtf3ex0zn84eknlp26cppxk255q363x70rv69k5kfgnpc")
+    Bucket("bucket1")
+;
+CALL_METHOD
+    Address("component_tdx_2_1cqhmyfm65sk7pmg40jzt3m5awfg3ws39k56kzl8uq39thf3f73hw4z")
+    "withdraw_resource"
+    Bucket("bucket1")
+;
+CALL_METHOD
+    Address("account_tdx_2_128q9086uj7hjgpdlfef8pfttpcjfp48dq4x2xfds4vkw948qsckwpc")
+    "try_deposit_batch_or_refund"
+    Expression("ENTIRE_WORKTOP")
+    Enum<0u8>()
+;

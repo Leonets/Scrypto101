@@ -1,16 +1,28 @@
-
+CALL_METHOD
+    Address("account_tdx_2_128q9086uj7hjgpdlfef8pfttpcjfp48dq4x2xfds4vkw948qsckwpc")
+    "withdraw_non_fungibles"
+    Address("resource_tdx_2_1ntrl98xfxl0rz0ufhyhs03murl6aftrdlre78n5lk6zaje3cpelw6x")
+    Array<NonFungibleLocalId>(
+        NonFungibleLocalId("#0#")
+    )
+;
+TAKE_NON_FUNGIBLES_FROM_WORKTOP
+    Address("resource_tdx_2_1ntrl98xfxl0rz0ufhyhs03murl6aftrdlre78n5lk6zaje3cpelw6x")
+    Array<NonFungibleLocalId>(
+        NonFungibleLocalId("#0#")
+    )
+    Bucket("bucket1")
+;
 CALL_FUNCTION
     Address("package_tdx_2_1p4jsqfy3lzctyh7zl3qsttac3a9lsn9zqee8h4u04zen9a0x4fgl70")
     "Fcgsales"
     "instantiate"
-    Address("resource_sim1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxakj8n3")
+    Address("resource_tdx_2_1tknxxxxxxxxxradxrdxxxxxxxxx009923554798xxxxxxxxxtfd2jc")
     Decimal("1000")
-    Address("resource_tdx_2_1ntrl98xfxl0rz0ufhyhs03murl6aftrdlre78n5lk6zaje3cpelw6x:#1#")
+    Bucket("bucket1")
 ;
 CALL_METHOD
     Address("account_tdx_2_128q9086uj7hjgpdlfef8pfttpcjfp48dq4x2xfds4vkw948qsckwpc")
-    "try_deposit_batch_or_refund"
-    Expression("ENTIRE_WORKTOP")
-    Enum<0u8>()
+          "deposit_batch"
+          Expression("ENTIRE_WORKTOP")
 ;
-
