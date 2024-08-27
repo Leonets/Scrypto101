@@ -14,7 +14,7 @@ TAKE_ALL_FROM_WORKTOP
 ;
 CALL_METHOD
     Address("${component}")
-    "cancel_escrow"
+    "withdraw_resource"
     Bucket("bucket1")
 ;
 CALL_METHOD

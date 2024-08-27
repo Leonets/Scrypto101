@@ -15,6 +15,11 @@ export dapp_package=$(resim publish . | sed -nr "s/Success! New Package: ([[:aln
 echo "Package = " $dapp_package
 
 export non_fungible_global_id=$(resim new-simple-badge | sed -nr "s/NonFungibleGlobalId: ([[:alnum:]#:_]+)/\1/p")
+export non_fungible_local_id=#1#
+export escrow_non_fungible_local_id={0a6a31c373b8c4fb-eeb2b0562d4e3eb1-3a10ab15d5aac00d-bb062d005d1fafb0}
+
+echo "Account before Instantiate dapp"
+resim show $account
 
 echo "Instantiate dapp"
 output=`resim call-function $dapp_package Fcgsales instantiate $xrd 1000 $non_fungible_global_id | awk '/Component: |Resource: / {print $NF}'`
@@ -47,7 +52,31 @@ resim show $account
 
 # Accept the first offer
 echo '>>> Exchange ' 
+export amount=1000
 resim run escrow/exchange.rtm
 
 echo 'After Exchange'
 resim show $account
+
+
+# Cancel the first offer
+echo '>>> Cancel ' 
+resim run escrow/cancel_escrow.rtm
+
+echo 'After Cancel'
+resim show $account
+
+
+
+
+
+# Withdraw
+echo '>>> Withdraw ' 
+resim run escrow/withdraw.rtm
+
+echo 'After Withdraw'
+resim show $account
+
+
+
+

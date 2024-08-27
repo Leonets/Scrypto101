@@ -1,4 +1,32 @@
-# Scrypto 101
+# Scrypto 101 (Escrow)
+
+here is the data of the deployed blueprint
+
+Tx Manifest files are in stokenet/ directory
+
+Transaction ID: txid_tdx_2_14p8q44ttwjm0gr8ld5esmt5lp64s8txvvzmc75f6dg9qkm279vns6y8x7j
+Package address: package_tdx_2_1p4jsqfy3lzctyh7zl3qsttac3a9lsn9zqee8h4u04zen9a0x4fgl70
+
+Created entities
+
+    component_tdx_2_1cpkdxhvreprd6kwvztjmn2y0wj6qctnlpefeaz9vu9cp3ahr4l9xcs
+    owner=resource_tdx_2_1th5mamrx8ck0nem8ktgpum9t6aa808nl8t9y5p0ak8z5n3q4jxefa9
+    admin=resource_tdx_2_1t4nt68uuhm4xezgdjcp0sx283207d03mpml78sszsaxyjqnf3t2lep
+    manager=resource_tdx_2_1nf7fqj8m7mzvp2uud8lujcjax64su0g3s9e64l9esnxdm2fd489p54
+    customer=resource_tdx_2_1nfhascllr4sr33vdhwhlr4w5p6hst8rzdgnu94z3yqn59hrt9yhwjc
+    nft=resource_tdx_2_1nfs8geg85lmhfp0hv76xmzls8grvkvhsxzj8g5vcgqtpslh73zuqfp
+
+Tx - Offer sent to the customer (as admin)
+    txid_tdx_2_14kacet93j3g58kzl26hcwmqjcg75x4j0z2v5ru8ctc9srh3nf9sqen3j5h
+
+Tx- Send a badge to a customer to let it accept the offer
+    txid_tdx_2_1ll3hn3ylkz5nz9z7z8e3u9sdpv46k282gt7qhlmxv25hc8mzexyq55tv27
+
+Tx - Offer accepted by the customer 
+    txid_tdx_2_1p7xz9nhe0tdeqtcs7uv2y9pyldc6u70323s6sldjl6ufxs7qkwssx8keey
+
+
+# Scrypto 101 (FCGSales)
 
 here is the data of the deployed blueprint
 

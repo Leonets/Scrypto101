@@ -7,11 +7,11 @@ CALL_METHOD
     Address("${account}")
     "withdraw"
     Address("${xrd}")
-    Decimal("100")
+    Decimal("${amount}")
 ;
 TAKE_FROM_WORKTOP
     Address("${xrd}")
-    Decimal("100")
+    Decimal("${amount}")
     Bucket("bucket1")
 ;
 CALL_METHOD
@@ -21,7 +21,7 @@ CALL_METHOD
 ;
 CALL_METHOD
     Address("${account}")
-    "deposit_batch"
+    "try_deposit_batch_or_refund"
     Expression("ENTIRE_WORKTOP")
     Enum<0u8>()
 ;

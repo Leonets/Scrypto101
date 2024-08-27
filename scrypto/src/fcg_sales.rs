@@ -7,30 +7,20 @@
 //! [instantiate()][fcgsales::Fcgsales::instantiate]
 //! Creates a new Fcgsales instance.
 //!
-//! ## Send Offer
+//! ## exchange
 //!
-//! [register()][fcgsales::Fcgsales::send_offer]
-//! Send an Offer to a Customer
+//! [register()][fcgsales::Fcgsales::exchange]
+//! Exchange 
 //! 
-//! ## Cancel Offer
+//! ## Cancel
 //!
-//! [register()][fcgsales::Fcgsales::cancel_offer]
-//! Cancel an Offer to a Customer
+//! [register()][fcgsales::Fcgsales::cancel_escrow]
+//! Cancel an Escrow
 //! 
-//! ## Accept Offer
+//! ## Withdraw
 //!
-//! [register()][fcgsales::Fcgsales::accept_offer]
-//! Accept an Offer to a Customer
-//! 
-//! ## Refuse Offer
-//!
-//! [register()][fcgsales::Fcgsales::refuse_offer]
-//! Refuse an Offer to a Customer
-//! 
-//! # Overview of secondary functions
-//!
-//! This is the list of all the functions needed to setup, configure and manage the dApp functionalities
-//! 
+//! [register()][fcgsales::Fcgsales::Withdraw]
+//! Withdraw a completed sale
 //! 
 
 use scrypto::prelude::*;
@@ -42,14 +32,6 @@ pub struct EscrowData {
     pub requested_amount: Decimal,
     pub offered_resource: ResourceAddress              
 }
-
-
-#[derive(ScryptoSbor, NonFungibleData)]
-pub struct EscrowBadge {
-    offered_resource: ResourceAddress
-}
-
-
 
 #[blueprint]
 mod fcgsales {
@@ -68,7 +50,6 @@ mod fcgsales {
     }
 
     /// Data managed by the blueprint
-    // nft_manager: ResourceManager,                            -> Resource Manager for minting/updating EscrowData NFT
     struct Fcgsales<> {
         escrow_vault: NonFungibleVault,
         completed_sale: Vault,
@@ -97,9 +78,7 @@ mod fcgsales {
 
 
             let (address_reservation, component_address) =
-                Runtime::allocate_component_address(Fcgsales::blueprint_id());
-
-            // let global_caller_badge_rule = rule!(require(global_caller(component_address))); 
+                Runtime::allocate_component_address(Fcgsales::blueprint_id());  
                 
             // Create a resourceManager to manage EscrowData NFT
             let nft_manager =
@@ -121,19 +100,7 @@ mod fcgsales {
                 ))    
                 .create_with_no_initial_supply();
 
-            //mint an NFT
-            // let escrow_nft = EscrowData {
-            //     requested_resource: requested_resource,
-            //     requested_amount: requested_amount,
-            //     offered_resource: offered_resource.resource_address()
-            // };
-
-            info!("Minting an Escrow NFT");
-            // let nft: NonFungibleBucket = scrypto::prelude::NonFungibleBucket(nft_manager
-            //     .mint_ruid_non_fungible(escrow_nft));
-            // let nft: Bucket = nft_manager
-            //     .mint_ruid_non_fungible(escrow_nft);         
-
+            info!("Minting an Escrow NFT");    
             let nft = 
                 nft_manager
                 .mint_ruid_non_fungible(
@@ -142,7 +109,8 @@ mod fcgsales {
                         requested_amount: requested_amount,
                         offered_resource: offered_resource.resource_address()
                     }
-                ).as_non_fungible();               
+                ).as_non_fungible();       
+
       
             // Instantiate a new component by storing the offered resource in a Vault
             let component = 
@@ -163,24 +131,23 @@ mod fcgsales {
             return (component, nft);
         }
 
-        /// This creates and send a new offer to a customer
-        /// The offer is represented by an hash that is tied to a PDF document that has been sent to the customer separately
+        /// This is for exchanging the offered resource with a bucket of fungibles
         /// 
+        /// resource address and amount of the offer needs to be checked
         /// 
         /// Arguments:
-        /// - `hash_pdf`: This is the hash of the PDF document that contains the commercial offer 
-        /// - `expiry_date`: Expiry date of the offer
-        /// - `customer_account`: Account where this NFT will be sent (not needed)
+        /// - `bucket_of_resource`: This is the offered bucket
         ///
-        /// Returns 'Bucket':
-        /// - the EscrowData NFT
+        /// Returns:
+        /// - the offered resource
+        /// - bucket in exceed
         ///
         /// ---
         ///
-        /// **Access control:** Can be called by an Admin or by a Manager.
+        /// **Access control:** Can be called by anyone.
         ///
         /// **Transaction manifest:**
-        /// `fcgsales/send_offer_as_manager.rtm`
+        /// `escrow/exchange.rtm`
         /// ```text
         #[doc = include_str!("../escrow/exchange.rtm")]
         /// ```      
@@ -205,42 +172,67 @@ mod fcgsales {
             self.completed_sale.put(bucket_of_resource.take(requested_amount));
 
             //return the offered resource
-            return (self.escrow_vault.take(1),bucket_of_resource);
+            return (self.escrow_vault.take_all(),bucket_of_resource);
         }
 
-        pub fn withdraw_resource(&mut self, escrow_nft: NonFungibleBucket) -> (Bucket,Option<NonFungibleBucket>) {
+        /// This is to withdraw the collected resource in exchange for the offered resource
+        /// 
+        /// 
+        /// Arguments:
+        /// - `escrow_nft`: the NFT representing the offer deposited in the component
+        ///
+        /// Returns, when escrow is completed:
+        /// - the requested resource and amount
+        /// 
+        /// Returns, when escrow is not completed:
+        /// - the same NFT that has been sent in
+        ///
+        /// ---
+        ///
+        /// **Access control:** Can be called by anyone.
+        ///
+        /// **Transaction manifest:**
+        /// `escrow/exchange.rtm`
+        /// ```text
+        #[doc = include_str!("../escrow/exchange.rtm")]
+        /// ```      
+        pub fn withdraw_resource(&mut self, escrow_nft: NonFungibleBucket) -> (Option<Bucket>,Option<NonFungibleBucket>) {
 
-            let escrow_data: EscrowData = escrow_nft.non_fungible().data();
-
-            info!("Withdraw Amount: {:?} of: {:?} ", escrow_data.requested_amount, escrow_data.requested_resource);   
+            let _escrow_data: EscrowData = escrow_nft.non_fungible().data();
+            info!("Withdraw Amount: {:?} of: {:?} ", _escrow_data.requested_amount, _escrow_data.requested_resource);   
 
             match self.completed_sale.is_empty() {
                 false => {
                     //burn the nft
                     escrow_nft.burn();
                     //return the collected tokens
-                    return (self.completed_sale.take_all(), None);
+                    info!("Amount returned: {:?} ", self.completed_sale.amount());   
+                    return (Some(self.completed_sale.take_all()), None);
                 }
                 true => {
                     info!("Escrow has not been completed ! ");
-                    return (Bucket::new(escrow_data.requested_resource), Some(escrow_nft));
+                    return (None, Some(escrow_nft));
                 }
             }
         }
 
-        /// This is for accepting an offer
+        /// This is for canceling an escrow
         /// 
         /// Arguments:
-        /// - `offer_data_proof`: the EscrowData NFT Proof 
+        /// - `escrow_nft`: the NFT representing the offer deposited in the component
         ///
-        /// Returns 'None':
+        /// Returns, when escrow is completed:
+        /// - the same NFT that has been sent in
+        /// 
+        /// Returns, when escrow is not completed:
+        /// - the offered resource and amount at the time of creating the escrow
         ///
         /// ---
         ///
-        /// **Access control:** Can be called by a Customer Only.
+        /// **Access control:** Can be called by anyone
         ///
         /// **Transaction manifest:**
-        /// `fcgsales/accept_offer.rtm`
+        /// `escrow/cancel_escrow.rtm`
         /// ```text
         #[doc = include_str!("../escrow/cancel_escrow.rtm")]
         /// ``` 
@@ -253,7 +245,7 @@ mod fcgsales {
             match self.completed_sale.is_empty() {
                 false => {
                     assert!(true == false, "Escrow is completed and it is not cancelable anymore!");
-                    None
+                    Some(escrow_nft)
                 }
                 true => {
                     info!("Escrow has not been completed and you cancel ! ");
@@ -267,26 +259,6 @@ mod fcgsales {
         pub fn assert_resource(res_addr: ResourceAddress, expect_res_addr: ResourceAddress){
             assert!(res_addr == expect_res_addr, "Incorrect resource passed in for interacting with the component!");
         }
-
-
-        // pub fn accept_offer(&mut self, offer_data_proof: NonFungibleProof)  {
-        //     let current_epoch = Decimal::from(Runtime::current_epoch().number());
-            
-        //     // Update the state of the Offer
-        //     let offer_data_proof = offer_data_proof.skip_checking();
-        //     let nft_local_id: NonFungibleLocalId = offer_data_proof.as_non_fungible().non_fungible_local_id();
-        //     let mut nfdata: EscrowData = ResourceManager::from(offer_data_proof.resource_address()).get_non_fungible_data(&nft_local_id);
-
-        //     info!("Accepting an offer for this pdf {:?} with this expiry date {:?} at epoch  {:?} ",nfdata.hash_pdf, nfdata.expiry_date, current_epoch);
-
-        //     assert!(nfdata.state == "NEW", "Offer is not acceptable anymore!");
-        //     assert!(nfdata.expiry_date >= current_epoch, "Offer is expired!");
-        //     self.nft_manager.update_non_fungible_data(&nft_local_id, "state", "ACCEPTED");   
-        //     self.nft_manager.update_non_fungible_data(&nft_local_id, "accepted_timestamp", current_epoch);   
-
-        //     //emit the event
-        //     nfdata.state = "ACCEPTED".to_string();
-        // }
 
     }
 }
